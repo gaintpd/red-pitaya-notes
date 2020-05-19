@@ -1,12 +1,13 @@
 device=$1
 
-boot_dir=/tmp/BOOT
-root_dir=/tmp/ROOT
+boot_dir=`mktemp -d /tmp/BOOT.XXXXXXXXXX`
+root_dir=`mktemp -d /tmp/ROOT.XXXXXXXXXX`
 
-root_tar=ubuntu-base-14.04.4-core-armhf.tar.gz
+linux_dir=tmp/linux-4.19
+linux_ver=4.19.123-xilinx
+
+root_tar=ubuntu-base-14.04.5-base-armhf.tar.gz
 root_url=http://cdimage.ubuntu.com/ubuntu-base/releases/14.04/release/$root_tar
-
-hostapd_url=https://googledrive.com/host/0B-t5klOOymMNfmJ0bFQzTVNXQ3RtWm5SQ2NGTE1hRUlTd3V2emdSNzN6d0pYamNILW83Wmc/rtl8192cu/hostapd-armhf
 
 passwd=changeme
 timezone=Europe/Brussels
@@ -14,11 +15,11 @@ timezone=Europe/Brussels
 # Create partitions
 
 parted -s $device mklabel msdos
-parted -s $device mkpart primary fat16 4MB 16MB
-parted -s $device mkpart primary ext4 16MB 100%
+parted -s $device mkpart primary fat16 4MiB 16MiB
+parted -s $device mkpart primary ext4 16MiB 100%
 
-boot_dev=/dev/`lsblk -lno NAME $device | sed '2!d'`
-root_dev=/dev/`lsblk -lno NAME $device | sed '3!d'`
+boot_dev=/dev/`lsblk -ln -o NAME -x NAME $device | sed '2!d'`
+root_dev=/dev/`lsblk -ln -o NAME -x NAME $device | sed '3!d'`
 
 # Create file systems
 
@@ -27,14 +28,13 @@ mkfs.ext4 -F -j $root_dev
 
 # Mount file systems
 
-mkdir -p $boot_dir $root_dir
-
 mount $boot_dev $boot_dir
 mount $root_dev $root_dir
 
 # Copy files to the boot file system
 
-cp boot.bin devicetree.dtb uImage uEnv.txt $boot_dir
+cp boot.bin devicetree.dtb uImage $boot_dir
+cp uEnv-ext4.txt $boot_dir/uEnv.txt
 
 # Copy Ubuntu Core to the root file system
 
@@ -42,22 +42,28 @@ test -f $root_tar || curl -L $root_url -o $root_tar
 
 tar -zxf $root_tar --directory=$root_dir
 
+# Install Linux modules
+
+modules_dir=$root_dir/lib/modules/$linux_ver
+
+mkdir -p $modules_dir/kernel
+
+find $linux_dir -name \*.ko -printf '%P\0' | tar --directory=$linux_dir --owner=0 --group=0 --null --files-from=- -zcf - | tar -zxf - --directory=$modules_dir/kernel
+
+cp $linux_dir/modules.order $linux_dir/modules.builtin $modules_dir/
+
+depmod -a -b $root_dir $linux_ver
+
 # Add missing configuration files and packages
 
 cp /etc/resolv.conf $root_dir/etc/
 cp /usr/bin/qemu-arm-static $root_dir/usr/bin/
 
-cp patches/fw_env.config $root_dir/etc/
-
-cp fw_printenv $root_dir/usr/local/bin/fw_printenv
-cp fw_printenv $root_dir/usr/local/bin/fw_setenv
-
-curl -L $hostapd_url -o $root_dir/usr/local/sbin/hostapd
-chmod +x $root_dir/usr/local/sbin/hostapd
-
 chroot $root_dir <<- EOF_CHROOT
 export LANG=C
 export LC_ALL=C
+
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 cat <<- EOF_CAT > etc/apt/apt.conf.d/99norecommends
 APT::Install-Recommends "0";
@@ -135,29 +141,12 @@ ignore_broadcast_ssid=0
 wpa=2
 wpa_passphrase=RedPitaya
 wpa_key_mgmt=WPA-PSK
-wpa_pairwise=TKIP
+wpa_pairwise=CCMP
 rsn_pairwise=CCMP
 EOF_CAT
 
 cat <<- EOF_CAT > etc/default/hostapd
 DAEMON_CONF=/etc/hostapd/hostapd.conf
-
-if [ "\\\$1" = "start" ]
-then
-  iw wlan0 info > /dev/null 2>&1
-  if [ \\\$? -eq 0 ]
-  then
-    sed -i '/^driver/s/=.*/=nl80211/' /etc/hostapd/hostapd.conf
-    DAEMON_SBIN=/usr/sbin/hostapd
-  else
-    sed -i '/^driver/s/=.*/=rtl871xdrv/' /etc/hostapd/hostapd.conf
-    DAEMON_SBIN=/usr/local/sbin/hostapd
-  fi
-  echo \\\$DAEMON_SBIN > /run/hostapd.which
-elif [ "\\\$1" = "stop" ]
-then
-  DAEMON_SBIN=\\\$(cat /run/hostapd.which)
-fi
 EOF_CAT
 
 cat <<- EOF_CAT > etc/dhcp/dhcpd.conf
@@ -242,8 +231,11 @@ apt-get clean
 echo root:$passwd | chpasswd
 
 service ntp stop
+service ssh stop
 
 history -c
+
+sync
 EOF_CHROOT
 
 rm $root_dir/etc/resolv.conf
@@ -254,3 +246,5 @@ rm $root_dir/usr/bin/qemu-arm-static
 umount $boot_dir $root_dir
 
 rmdir $boot_dir $root_dir
+
+zerofree $root_dev

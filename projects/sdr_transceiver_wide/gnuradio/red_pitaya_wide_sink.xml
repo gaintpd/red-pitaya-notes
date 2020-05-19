@@ -27,12 +27,14 @@
         port=$port,
         freq=$freq,
         rate=$rate,
+        mask=$mask,
         corr=$corr,
         ptt=$ptt
 )
   </make>
   <callback>set_freq($freq, $corr)</callback>
   <callback>set_rate($rate)</callback>
+  <callback>set_mask($mask)</callback>
   <callback>set_ptt($ptt)</callback>
   <param>
     <name>Address</name>
@@ -59,6 +61,12 @@
     <type>int</type>
   </param>
   <param>
+    <name>IQ Bitmask</name>
+    <key>mask</key>
+    <value>1</value>
+    <type>int</type>
+  </param>
+  <param>
     <name>Freq. Correction ppm</name>
     <key>corr</key>
     <value>0</value>
@@ -67,8 +75,8 @@
   <param>
     <name>PTT</name>
     <key>ptt</key>
-    <value>False</value>
-    <type>bool</type>
+    <value>0</value>
+    <type>int</type>
   </param>
   <sink>
     <name>in</name>

@@ -48,22 +48,11 @@ package require platform
 set platform [lindex [split [platform::generic] -] 0]
 
 load {} vfs
-load {} sqlite3
-load {} g2lite
-load {} mcpha
 
 # map of proper version numbers to replace @ markers in paths given to vfscopy
 # this relies on having all necessary extensions already loaded at this point
 set versmap [list tcl8@ tcl$tcl_version tk8@ tk$tcl_version \
-                  vfs1@ vfs[package require vfs] \
-                  sqlite3@ sqlite[package require sqlite3] \
-                  g2lite0@ g2lite[package require g2lite] \
-                  mcpha0@ mcpha[package require mcpha]]
-
-if {[string equal $platform win32]} {
-  load {} registry
-  lappend versmap registry1@ registry[package require registry]
-}
+                  vfs1@ vfs[package require vfs]]
 
 if {$debugOpt} {
   puts "Starting [info script]"
@@ -74,19 +63,6 @@ if {$debugOpt} {
   puts " versmap: $versmap"
   puts ""
 }
-
-# Create package index files for the static extensions.
-set exts [list g2lite mcpha]
-if {[string equal $platform win32]} {
-  lappend exts registry
-}
-foreach ext $exts {
-  load {} $ext
-  set dst [file join lib "[string tolower $ext][package provide $ext]" pkgIndex.tcl]
-  puts $dst
-  set index($dst) "package ifneeded $ext [package provide $ext] {load {} [string tolower $ext]}"
-}
-set index(lib/sqlite[package provide sqlite3]/pkgIndex.tcl) "package ifneeded sqlite3 [package provide sqlite3] {load {} sqlite3}"\
 
 set clifiles {
   boot.tcl
@@ -106,27 +82,6 @@ set clifiles {
   lib/vfs1@/vfslib.tcl
   lib/vfs1@/vfsUtils.tcl
   lib/vfs1@/zipvfs.tcl
-  lib/sqlite3@/pkgIndex.tcl
-  lib/g2lite0@/pkgIndex.tcl
-  lib/mcpha0@/pkgIndex.tcl
-  lib/tcllib1.16/pkgIndex.tcl
-  lib/tcllib1.16/asn
-  lib/tcllib1.16/base64
-  lib/tcllib1.16/comm
-  lib/tcllib1.16/cmdline
-  lib/tcllib1.16/csv
-  lib/tcllib1.16/fileutil
-  lib/tcllib1.16/ldap
-  lib/tcllib1.16/log
-  lib/tcllib1.16/math
-  lib/tcllib1.16/ooutil
-  lib/tcllib1.16/snit
-  lib/tcllib1.16/struct
-  lib/tcllib1.16/uri
-}
-
-if {[string equal $platform win32]} {
-  lappend clifiles lib/registry1@/pkgIndex.tcl
 }
 
 set guifiles {
@@ -140,8 +95,10 @@ set guifiles {
   lib/tk8@/dialog.tcl
   lib/tk8@/entry.tcl
   lib/tk8@/focus.tcl
+  lib/tk8@/iconlist.tcl
   lib/tk8@/icons.tcl
   lib/tk8@/listbox.tcl
+  lib/tk8@/megawidget.tcl
   lib/tk8@/menu.tcl
   lib/tk8@/mkpsenc.tcl
   lib/tk8@/msgbox.tcl
@@ -171,8 +128,6 @@ set guifiles {
   lib/BLT2.5/treeview_m.xbm
   lib/BLT2.5/bltCanvEps.pro
   lib/BLT2.5/bltGraph.pro
-  lib/Tktable2.10/pkgIndex.tcl
-  lib/Tktable2.10/tkTable.tcl
 }
 
 if {$encOpt} {
